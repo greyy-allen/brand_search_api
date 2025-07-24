@@ -4,7 +4,7 @@ from bson.json_util import dumps
 
 app = Flask(__name__)
 
-client = MongoClient("mongodb+srv://michael:hdb12821az@cpgrv3.7mwy8pv.mongodb.net/")
+client = MongoClient("")
 db = client.brands
 brands = db.brand_profile
 
