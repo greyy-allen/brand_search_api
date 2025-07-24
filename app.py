@@ -1,4 +1,4 @@
-from flask import Flask, request, Response
+from flask import Flask, request, Response, abort
 from pymongo import MongoClient
 from bson.json_util import dumps
 import os
@@ -9,6 +9,14 @@ mongo_uri = os.getenv("MONGODB_URI")
 client = MongoClient(mongo_uri)
 db = client.brands
 brands = db.brand_profile
+
+
+@app.before_request
+def check_wall_param():
+    """Allow further processing only if ?wall=78 is present"""
+    wall = request.args.get("wall")
+    if wall != "78":
+        abort(403)  # Forbidden
 
 
 @app.route("/api/brands/search", methods=["POST"])
