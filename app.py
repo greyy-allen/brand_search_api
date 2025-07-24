@@ -1,10 +1,12 @@
 from flask import Flask, request, Response
 from pymongo import MongoClient
 from bson.json_util import dumps
+import os
 
 app = Flask(__name__)
 
-client = MongoClient("")
+mongo_uri = os.getenv("MONGODB_URI")
+client = MongoClient(mongo_uri)
 db = client.brands
 brands = db.brand_profile
 
