@@ -1,11 +1,18 @@
 from flask import Flask, request, Response, abort
+from flask_cors import CORS
 from pymongo import MongoClient
 from bson.json_util import dumps
 import os
 
 app = Flask(__name__)
 
+# ENV VAR
 mongo_uri = os.getenv("MONGODB_URI")
+frontend_origins = os.getenv("FRONTEND_ORIGINS", "")
+allowed_origins = [origin.strip() for origin in frontend_origins.split(",") if origin]
+
+CORS(app, resources={r"/api/*": {"origins": allowed_origins}})
+
 client = MongoClient(mongo_uri)
 db = client.brands
 brands = db.brand_profile
