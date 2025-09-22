@@ -34,23 +34,18 @@ def check_wall_param():
         abort(403)  # Forbidden
 
 
-@app.route("/api/brands/test", methods=["GET"])
-def test_connection():
-    print(mongo_uri)
-    doc = brands.find_one({}, {"_id": 1, "name": 1})  # just project _id + name
-    if not doc:
-        return Response(
-            dumps({"error": "No documents found"}), mimetype="application/json"
-        )
-    return Response(dumps(doc), mimetype="application/json")
-
-
 @app.route("/api/brands/search", methods=["POST"])
 def search_brands():
     body = request.get_json(silent=True) or {}
     limit = min(int(body.get("limit", 25)), 100)
     skip = int(body.get("skip", 0))
-    projection = {"_id": 1, "name": 1, "categories": 1, "product_philosophy": 1}
+    projection = {
+        "_id": 1,
+        "name": 1,
+        "categories": 1,
+        "product_philosophy": 1,
+        "annual_volume": 1,
+    }
 
     if not body:
         results = list(brands.find({}, projection).skip(skip).limit(limit))
