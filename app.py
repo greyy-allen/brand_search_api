@@ -75,6 +75,15 @@ def search_brands():
             if wanted:
                 query.append({f"filters.{section}": {"$in": wanted}})
 
+    # 4. Ingredient Filter to include/exclude
+    ing_any = body.get("ingredients_any")
+    ing_exclude_any = body.get("ingredients_exclude_any")
+
+    if ing_any:
+        query.append({"ingredients": {"$in": ing_any}})
+    if ing_exclude_any:
+        query.append({"ingredients": {"$nin": ing_exclude_any}})
+
     # Build AND query
     if len(query) == 1:
         mongo_query = query[0]
