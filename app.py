@@ -3,6 +3,7 @@ from flask_cors import CORS
 from pymongo import MongoClient
 from bson.json_util import dumps
 from dotenv import load_dotenv
+import re
 import os
 
 app = Flask(__name__)
@@ -76,8 +77,8 @@ def search_brands():
                 query.append({f"filters.{section}": {"$in": wanted}})
 
     # 4. Ingredient Filter to include/exclude
-    ing_any = body.get("ingredients_any")
-    ing_exclude_any = body.get("ingredients_exclude_any")
+    ing_any = body.get("include")
+    ing_exclude_any = body.get("exclude")
 
     if ing_any:
         query.append({"ingredients": {"$in": ing_any}})
@@ -96,6 +97,29 @@ def search_brands():
     return Response(
         dumps({"results": results, "count": len(results)}), mimetype="application/json"
     )
+
+
+@app.route("/api/ingredients/autocomplete", methods=["POST"])
+def ingredients_autocomplete():
+    body = request.get_json(silent=True) or {}
+    q = (body.get("q") or "").strip()
+
+    stages = []
+
+    if len(q) >= 2:
+        rx = f"^{re.escape(q)}"
+        stages.append({"$match": {"ingredients": {"$regex": rx, "$options": "i"}}})
+
+    stages += [{"$unwind": "$ingredients"}]
+
+    if len(q) >= 2:
+        stages.append({"$match": {"ingredients": {"$regex": rx, "$options": "i"}}})
+
+    stages += [{"$group": {"_id": "$ingredients"}}, {"$sort": {"_id": 1}}]
+
+    docs = list(brands.aggregate(stages, allowDiskUse=False))
+    results = [d["_id"] for d in docs]
+    return Response(dumps({"results": results}), mimetype="application/json")
 
 
 if __name__ == "__main__":
