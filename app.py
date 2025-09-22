@@ -2,13 +2,21 @@ from flask import Flask, request, Response, abort
 from flask_cors import CORS
 from pymongo import MongoClient
 from bson.json_util import dumps
+from dotenv import load_dotenv
 import os
 
 app = Flask(__name__)
 
+load_dotenv()
+
 # ENV VAR
-mongo_uri = os.getenv("MONGODB_URI")
-frontend_origins = os.getenv("FRONTEND_ORIGINS", "")
+mongo_uri = os.getenv(
+    "MONGODB_URI", "mongodb+srv://michael:hdb12821az@cpgrv3.7mwy8pv.mongodb.net/"
+)
+frontend_origins = os.getenv(
+    "FRONTEND_ORIGINS",
+    "http://localhost:5173,https://cpg-brand-search.onrender.com,https://signals-ui.onrender.com,http://127.0.0.1:5000",
+)
 allowed_origins = [origin.strip() for origin in frontend_origins.split(",") if origin]
 
 CORS(app, resources={r"/api/*": {"origins": allowed_origins}})
@@ -26,13 +34,26 @@ def check_wall_param():
         abort(403)  # Forbidden
 
 
+@app.route("/api/brands/test", methods=["GET"])
+def test_connection():
+    print(mongo_uri)
+    doc = brands.find_one({}, {"_id": 1, "name": 1})  # just project _id + name
+    if not doc:
+        return Response(
+            dumps({"error": "No documents found"}), mimetype="application/json"
+        )
+    return Response(dumps(doc), mimetype="application/json")
+
+
 @app.route("/api/brands/search", methods=["POST"])
 def search_brands():
-    body = request.get_json()
+    body = request.get_json(silent=True) or {}
+    limit = min(int(body.get("limit", 25)), 100)
+    skip = int(body.get("skip", 0))
+    projection = {"_id": 1, "name": 1, "categories": 1, "product_philosophy": 1}
 
-    # If no payload, return first 25 results
     if not body:
-        results = list(brands.find().limit(25))
+        results = list(brands.find({}, projection).skip(skip).limit(limit))
         return Response(
             dumps({"results": results, "count": len(results)}),
             mimetype="application/json",
@@ -56,23 +77,18 @@ def search_brands():
     filters = body.get("filters")
     if filters:
         for section, wanted in filters.items():
-            # In Mongo, assuming e.g. unique_selling_points is a list of dicts with "title"
-            # Be flexible: user can pass either scalar or dict for matching
-            section_path = section  # e.g. "unique_selling_points"
-            sub_q = []
-            for value in wanted:
-                # try to match on dicts' 'title' fields or just the string
-                # assumes in DB: e.g. unique_selling_points: [{title: ...}]
-                sub_q.append({f"filters.{section_path}": value})
-                # OR: try direct match if field stored as string
-                # sub_q.append({section: value})
-            # For each filter, require at least one match for the wanted list.
-            query.append({"$or": sub_q})
+            if wanted:
+                query.append({f"filters.{section}": {"$in": wanted}})
 
     # Build AND query
-    mongo_query = {"$and": query} if query else {}
+    if len(query) == 1:
+        mongo_query = query[0]
+    elif query:
+        mongo_query = {"$and": query}
+    else:
+        mongo_query = {}
 
-    results = list(brands.find(mongo_query))
+    results = list(brands.find(mongo_query, projection).skip(skip).limit(limit))
     return Response(
         dumps({"results": results, "count": len(results)}), mimetype="application/json"
     )
