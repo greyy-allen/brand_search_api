@@ -1,6 +1,7 @@
 from flask import Flask, request, Response, abort
 from flask_cors import CORS
 from pymongo import MongoClient
+from bson import ObjectId
 from bson.json_util import dumps
 from dotenv import load_dotenv
 import re
@@ -39,7 +40,8 @@ def check_wall_param():
 def search_brands():
     body = request.get_json(silent=True) or {}
     limit = min(int(body.get("limit", 25)), 100)
-    skip = int(body.get("skip", 0))
+    cursor = body.get("cursor")
+
     projection = {
         "_id": 1,
         "name": 1,
@@ -47,13 +49,6 @@ def search_brands():
         "product_philosophy": 1,
         "annual_volume": 1,
     }
-
-    if not body:
-        results = list(brands.find({}, projection).skip(skip).limit(limit))
-        return Response(
-            dumps({"results": results, "count": len(results)}),
-            mimetype="application/json",
-        )
 
     # AND logic: Accumulate all subqueries
     query = []
@@ -93,9 +88,34 @@ def search_brands():
     else:
         mongo_query = {}
 
-    results = list(brands.find(mongo_query, projection).skip(skip).limit(limit))
+    if cursor:
+        try:
+            cursor_oid = ObjectId(cursor)
+            if mongo_query:
+                mongo_query = {"$and": [mongo_query, {"_id": {"$gt": cursor_oid}}]}
+            else:
+                mongo_query = {"_id": {"$gt": cursor_oid}}
+        except Exception:
+            pass
+
+    docs = list(
+        brands.find(mongo_query, projection).sort([("_id", 1)]).limit(limit + 1)
+    )
+
+    has_more = len(docs) > limit
+    visible = docs[:limit] if has_more else docs
+    next_cursor = str(visible[-1]["_id"]) if has_more else None
+
     return Response(
-        dumps({"results": results, "count": len(results)}), mimetype="application/json"
+        dumps(
+            {
+                "results": visible,
+                "limit": limit,
+                "has_more": has_more,
+                "next_cursor": next_cursor,
+            }
+        ),
+        mimetype="application/json",
     )
 
 
