@@ -68,8 +68,14 @@ def search_brands():
     filters = body.get("filters")
     if filters:
         for section, wanted in filters.items():
-            if wanted:
-                query.append({f"filters.{section}": {"$in": wanted}})
+            if not wanted:
+                continue
+            if len(wanted) == 1:
+                # one value → exact match
+                query.append({f"filters.{section}": wanted[0]})
+            else:
+                # require ALL values present in that section
+                query.append({f"filters.{section}": {"$all": wanted}})
 
     # 4. Ingredient Filter to include/exclude
     ing_any = body.get("include")
