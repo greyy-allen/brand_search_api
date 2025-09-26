@@ -82,7 +82,7 @@ def search_brands():
     ing_exclude_any = body.get("exclude")
 
     if ing_any:
-        query.append({"ingredients": {"$in": ing_any}})
+        query.append({"ingredients": {"$all": ing_any}})
     if ing_exclude_any:
         query.append({"ingredients": {"$nin": ing_exclude_any}})
 
