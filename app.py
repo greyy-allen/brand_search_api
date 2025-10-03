@@ -86,6 +86,25 @@ def search_brands():
     if ing_exclude_any:
         query.append({"ingredients": {"$nin": ing_exclude_any}})
 
+    # 5. Annual volume
+    annual_volume = body.get("annual_volume")
+
+    agg_max = brands.aggregate(
+        [{"$group": {"_id": None, "max": {"$max": "$annual_volume"}}}]
+    )
+    try:
+        global_max = float(next(agg_max)["max"])
+    except StopIteration:
+        global_max = 0.0
+
+    if isinstance(annual_volume, dict):
+        annual_volume_range = {}
+        annual_volume_range["$gte"] = float(annual_volume.get("min", 0))
+        annual_volume_range["$lte"] = float(annual_volume.get("max", global_max))
+        query.append({"annual_volume": annual_volume_range})
+    else:
+        query.append({"annual_volume": {"$gte": 0, "$lte": global_max}})
+
     # Build AND query
     if len(query) == 1:
         mongo_query = query[0]
@@ -111,14 +130,23 @@ def search_brands():
     has_more = len(docs) > limit
     visible = docs[:limit] if has_more else docs
     next_cursor = str(visible[-1]["_id"]) if has_more else None
+    agg = brands.aggregate(
+        [{"$group": {"_id": None, "max": {"$max": "$annual_volume"}}}]
+    )
+    try:
+        annual_volume_max = float(next(agg)["max"])
+    except StopIteration:
+        annual_volume_max = 0.0
 
     return Response(
         dumps(
             {
                 "results": visible,
+                "count": len(visible),
                 "limit": limit,
                 "has_more": has_more,
                 "next_cursor": next_cursor,
+                "annual_volume_max": global_max,
             }
         ),
         mimetype="application/json",
