@@ -14,6 +14,8 @@ This project implements a backend service for brand search and ingredient auto-c
 - **Ingredient auto-complete** powered by MongoDB aggregation.
 - **CORS Support** for configurable frontend origins.
 - **Protected Endpoints** by requiring `?wall=78` parameter on each request.
+- **Annual Volume Slider Filtering** with default range `[0, global_max]` and `annual_volume_max` returned in responses.
+- **Count field** returned in responses to indicate number of results in the current page.
 
 ---
 
@@ -80,16 +82,58 @@ Perform complex, multi-criteria searches on the `brand_profile` collection.
 - **filters** (dict, optional): User feature filters, nested by section, with each value being an array of strings. A brand passes if it matches any value inside each section.
 - **include** (list, optional): Ingredients to include (brand must contain at least one).
 - **exclude** (list, optional): Ingredients to exclude (brand must not contain any).
+- **annual_volume** (dict, optional): Range filter with keys:
+  - `min` (float, optional): Minimum annual volume. Defaults to `0` if not provided.
+  - `max` (float, optional): Maximum annual volume. Defaults to `annual_volume_max` (the global maximum across all brands) if not provided.
 
-#### Example Request (First Page)
+#### Quick Guide: Annual Volume min/max
 
-```http
-POST /api/brands/search?wall=78
-Content-Type: application/json
+- If `annual_volume` is **not provided**, the API defaults to `[0, annual_volume_max]`.
+- If only `min` is provided, it defaults to `[min, annual_volume_max]`.
+- If only `max` is provided, it defaults to `[0, max]`.
+- If both are provided, it enforces `[min, max]`.
 
+#### Sample Request Bodies for `annual_volume`
+
+**1. No min/max provided**
+
+```json
+{
+  "limit": 5
+}
+```
+
+**2. Only min provided**
+
+```json
 {
   "limit": 5,
-  "categories": ["Immune Health"]
+  "annual_volume": {
+    "min": 2000
+  }
+}
+```
+
+**3. Only max provided**
+
+```json
+{
+  "limit": 5,
+  "annual_volume": {
+    "max": 10000
+  }
+}
+```
+
+**4. Both min and max provided**
+
+```json
+{
+  "limit": 5,
+  "annual_volume": {
+    "min": 1000,
+    "max": 5000
+  }
 }
 ```
 
@@ -106,22 +150,11 @@ Content-Type: application/json
       "annual_volume": 2325
     }
   ],
+  "count": 1,
   "limit": 5,
   "has_more": true,
-  "next_cursor": "685d4d949689d39d94274242"
-}
-```
-
-#### Example Request (Next Page)
-
-```http
-POST /api/brands/search?wall=78
-Content-Type: application/json
-
-{
-  "limit": 5,
-  "categories": ["Immune Health"],
-  "cursor": "685d4d949689d39d94274242"
+  "next_cursor": "685d4d949689d39d94274242",
+  "annual_volume_max": 500000
 }
 ```
 
@@ -131,26 +164,10 @@ Content-Type: application/json
 
 - Pagination is **cursor-based** using MongoDB `_id` values.
 - Each response includes:
+  - `count`: Number of results in this page.
   - `has_more`: Boolean indicating if more pages exist.
   - `next_cursor`: Pass this value in the next request to fetch the following page.
-- Frontend developers can implement an **infinite scroll** or **Load More button** using this pattern.
-
-#### Frontend Example (pseudo-code)
-
-```js
-let cursor = null;
-async function fetchPage() {
-  const res = await fetch("/api/brands/search?wall=78", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ limit: 10, categories: ["Immune Health"], cursor }),
-  });
-  const data = await res.json();
-  renderResults(data.results);
-  cursor = data.next_cursor; // update cursor for next call
-  if (!data.has_more) disableLoadMoreButton();
-}
-```
+  - `annual_volume_max`: Global maximum value for the slider.
 
 ---
 
@@ -182,60 +199,6 @@ Content-Type: application/json
 }
 ```
 
-#### Notes
-
-- The search is triggered only if `q` has at least 2 characters.
-- Returns alphabetically sorted ingredient names.
-
----
-
-## Code Structure and Explanation
-
-### Main Components
-
-- **Flask App Initialization:**  
-  Initializes and configures Flask, loads environment variables, sets up MongoDB client, and configures CORS.
-
-- **Security Middleware:**  
-  All requests must contain `?wall=78` as a query parameter, enforced via `@app.before_request`.
-
-- **Database:**  
-  Uses MongoDB. Collection: `brand_profile` in database `brands`.
-
-- **Endpoints:**
-  - `/api/brands/search` — for searching brands with cursor pagination.
-  - `/api/ingredients/autocomplete` — for autocompleting ingredient names.
-
-### CORS
-
-- Only specified frontend origins (`FRONTEND_ORIGINS` env var) are allowed to access `/api/*` endpoints.
-
-### MongoDB Connection
-
-- Connection string and DB configuration are read from environment, allowing for secure and flexible deployments.
-
----
-
-## Usage Examples (with `curl`)
-
-### Search Brands (First Page)
-
-```bash
-curl -X POST "http://localhost:5000/api/brands/search?wall=78"      -H "Content-Type: application/json"      -d '{"limit": 5, "categories": ["Immune Health"]}'
-```
-
-### Search Brands (Next Page)
-
-```bash
-curl -X POST "http://localhost:5000/api/brands/search?wall=78"      -H "Content-Type: application/json"      -d '{"limit": 5, "categories": ["Immune Health"], "cursor": "685d4d949689d39d94274242"}'
-```
-
-### Ingredient Autocomplete
-
-```bash
-curl -X POST "http://localhost:5000/api/ingredients/autocomplete?wall=78"      -H "Content-Type: application/json"      -d '{"q": "Alo"}'
-```
-
 ---
 
 ## Notes, Caveats, and Best Practices
@@ -245,13 +208,15 @@ curl -X POST "http://localhost:5000/api/ingredients/autocomplete?wall=78"      -
 - **Environment Variables:**  
   Store sensitive information such as database URIs securely.
 - **Performance:**  
-  Use MongoDB indexes on commonly searched fields (`ingredients`, `categories`, etc.) for best performance.
+  Use MongoDB indexes on commonly searched fields (`ingredients`, `categories`, `annual_volume`, etc.) for best performance.
 - **Pagination:**  
   Cursor-based pagination is used instead of `skip` for efficiency on large datasets.
 - **Input Validation:**  
   The API does not strictly validate request bodies; ensure that client applications send correctly structured JSON.
 - **Field Limitations:**  
   Only specific fields are returned by `/brands/search` for efficiency.
+- **Annual Volume Defaults:**  
+  If no `annual_volume` filter is supplied, the API defaults to `{"min": 0, "max": annual_volume_max}`.
 
 ---
 
